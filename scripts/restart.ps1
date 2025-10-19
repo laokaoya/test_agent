@@ -23,6 +23,10 @@ Write-Host ""
 
 # 3. 启动Flask应用
 Write-Host "正在启动Flask应用..." -ForegroundColor Yellow
+# 切换到项目根目录
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$rootPath = Split-Path -Parent $scriptPath
+Set-Location $rootPath
 Start-Process python -ArgumentList "app.py" -WindowStyle Normal
 
 Start-Sleep -Seconds 3

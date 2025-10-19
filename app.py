@@ -53,8 +53,9 @@ USE_CONVERSATION_ID = True
 
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-CSV_FILE = "test_results.csv"
-JSON_FILE = "test_results.json"
+# 数据文件路径
+CSV_FILE = os.path.join("data", "test_results.csv")
+JSON_FILE = os.path.join("data", "test_results.json")
 file_lock = threading.Lock()
 
 def save_to_json(test_data):
@@ -451,9 +452,22 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
         return {"scores": {}, "score_details": {}, "reason": "Gemini客户端未配置", "lessons": ""}
     
     try:
+        # 构建新的三级指标评分标准文本
         criteria_text = ""
-        for key, value in criteria.items():
-            criteria_text += f"【{key}】\n{value}\n\n"
+        all_criteria_keys = []
+        
+        for main_key, main_criteria in criteria.items():
+            if isinstance(main_criteria, dict) and 'sub_criteria' in main_criteria:
+                # 新的一级指标结构
+                criteria_text += f"【{main_criteria.get('name', main_key)}】\n{main_criteria.get('description', '')}\n\n"
+                
+                for sub_key, sub_criteria in main_criteria.get('sub_criteria', {}).items():
+                    criteria_text += f"  - {sub_criteria.get('name', sub_key)}：{sub_criteria.get('prompt', '')}\n\n"
+                    all_criteria_keys.append(f"{main_key}.{sub_key}")
+            else:
+                # 兼容旧的平级结构
+                criteria_text += f"【{main_key}】\n{main_criteria}\n\n"
+                all_criteria_keys.append(main_key)
         
         # 构建完整对话记录
         conversation_text = ""
@@ -500,10 +514,10 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
 请严格按照以下JSON格式输出，不要添加任何其他文字、markdown标记或代码块：
 {{
   "scores": {{
-    {', '.join([f'"{key}": 5' for key in criteria.keys()])}
+    {', '.join([f'"{key}": 5' for key in all_criteria_keys])}
   }},
   "score_details": {{
-    {', '.join([f'"{key}": "【严格评分】从孩子视角看，AI在这方面的问题是...（必须引用具体对话，如\\"第X轮AI说...这让孩子可能感到...\\")（挑刺心态，找问题）"' for key in criteria.keys()])}
+    {', '.join([f'"{key}": "【严格评分】从孩子视角看，AI在这方面的问题是...（必须引用具体对话，如\\"第X轮AI说...这让孩子可能感到...\\")（挑刺心态，找问题）"' for key in all_criteria_keys])}
   }},
   "reason": "【严苛总评】从孩子的角度看，AI的主要问题是...（必须具体，引用对话，不留情面地指出不足）",
   "lessons": "【改进建议】分条列出：\\n1. ❌ 主要问题：（最严重的问题是什么，引用对话）\\n2. ⚠️ 次要问题：（还有哪些问题，具体说明）\\n3. 💡 改进方向：（如果重做，应该如何改进，给出3-5条具体建议）",
@@ -555,8 +569,8 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
             print(f"   错误: {e}")
             
             # 返回默认评分
-            default_scores = {key: 5 for key in criteria.keys()}
-            default_details = {key: "评分解析失败，无法提供详细理由" for key in criteria.keys()}
+            default_scores = {key: 5 for key in all_criteria_keys}
+            default_details = {key: "评分解析失败，无法提供详细理由" for key in all_criteria_keys}
             return {
                 "scores": default_scores,
                 "score_details": default_details,
@@ -567,8 +581,8 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
             }
     except Exception as e:
         print(f"❌ Gemini评分异常: {e}")
-        default_scores = {key: 5 for key in criteria.keys()}
-        default_details = {key: "评分异常，无法提供详细理由" for key in criteria.keys()}
+        default_scores = {key: 5 for key in all_criteria_keys}
+        default_details = {key: "评分异常，无法提供详细理由" for key in all_criteria_keys}
         return {
             "scores": default_scores,
             "score_details": default_details,
@@ -583,12 +597,16 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
 def index():
     return render_template('index.html', max_rounds=MAX_ROUNDS)
 
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
 @app.route('/api/preset-children', methods=['GET'])
 def get_preset_children():
     """返回内置角色配置"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        json_path = os.path.join(base_dir, 'preset_children.json')
+        json_path = os.path.join(base_dir, 'config', 'preset_children.json')
         
         print(f"🔍 尝试读取文件: {json_path}")
         
@@ -613,7 +631,7 @@ def get_preset_criteria():
     """返回内置评分标准配置"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        json_path = os.path.join(base_dir, 'preset_criteria.json')
+        json_path = os.path.join(base_dir, 'config', 'preset_criteria.json')
         
         print(f"🔍 尝试读取评分标准文件: {json_path}")
         
@@ -728,7 +746,7 @@ def save_result():
     csv_success = save_to_csv(test_data)
     
     if json_success and csv_success:
-            return jsonify({
+                return jsonify({
             "success": True,
             "message": "测试结果已保存到JSON和CSV"
         })
@@ -747,6 +765,256 @@ def save_result():
                 "success": False,
             "message": "保存失败"
         }), 500
+
+# ========== 数据可视化仪表盘 API ==========
+
+@app.route('/api/dashboard/summary', methods=['GET'])
+def get_dashboard_summary():
+    """获取仪表盘概览数据"""
+    try:
+        # 读取JSON数据
+        if not os.path.isfile(JSON_FILE):
+            return jsonify({
+                "success": True,
+                "data": {
+                    "total_tests": 0,
+                    "today_tests": 0,
+                    "total_pass_rate": 0,
+                    "avg_score": 0,
+                    "avg_experience_score": 0
+                }
+            })
+        
+        with open(JSON_FILE, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        
+        if not all_data:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "total_tests": 0,
+                    "today_tests": 0,
+                    "total_pass_rate": 0,
+                    "avg_score": 0,
+                    "avg_experience_score": 0
+                }
+            })
+        
+        # 统计数据
+        total_tests = len(all_data)
+        
+        # 今日测试数
+        today = datetime.now().strftime('%Y-%m-%d')
+        today_tests = sum(1 for test in all_data if test.get('test_date', '') == today)
+        
+        # 平均分和通过率
+        avg_scores = [test.get('scores', {}).get('average', 0) for test in all_data]
+        avg_score = sum(avg_scores) / len(avg_scores) if avg_scores else 0
+        
+        # 通过率（≥7.0算通过）
+        pass_count = sum(1 for score in avg_scores if score >= 7.0)
+        total_pass_rate = (pass_count / len(avg_scores) * 100) if avg_scores else 0
+        
+        # 平均体验评分
+        exp_scores = [test.get('evaluation', {}).get('experience_score', 0) for test in all_data]
+        avg_experience_score = sum(exp_scores) / len(exp_scores) if exp_scores else 0
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "total_tests": total_tests,
+                "today_tests": today_tests,
+                "total_pass_rate": round(total_pass_rate, 1),
+                "avg_score": round(avg_score, 2),
+                "avg_experience_score": round(avg_experience_score, 1)
+            }
+        })
+    except Exception as e:
+        print(f"获取概览数据失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/dashboard/role-stats', methods=['GET'])
+def get_role_stats():
+    """获取各角色统计数据"""
+    try:
+        if not os.path.isfile(JSON_FILE):
+            return jsonify({"success": True, "data": []})
+        
+        with open(JSON_FILE, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        
+        if not all_data:
+            return jsonify({"success": True, "data": []})
+        
+        # 按角色类型统计
+        role_stats = {}
+        for test in all_data:
+            role_type = test.get('child', {}).get('type', '未知')
+            if role_type not in role_stats:
+                role_stats[role_type] = {
+                    'count': 0,
+                    'scores': [],
+                    'experience_scores': []
+                }
+            
+            role_stats[role_type]['count'] += 1
+            avg_score = test.get('scores', {}).get('average', 0)
+            role_stats[role_type]['scores'].append(avg_score)
+            
+            exp_score = test.get('evaluation', {}).get('experience_score', 0)
+            role_stats[role_type]['experience_scores'].append(exp_score)
+        
+        # 计算平均值
+        result = []
+        for role_type, stats in role_stats.items():
+            avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 0
+            avg_exp = sum(stats['experience_scores']) / len(stats['experience_scores']) if stats['experience_scores'] else 0
+            pass_rate = sum(1 for s in stats['scores'] if s >= 7.0) / len(stats['scores']) * 100 if stats['scores'] else 0
+            
+            result.append({
+                'role_type': role_type,
+                'count': stats['count'],
+                'avg_score': round(avg_score, 2),
+                'avg_experience': round(avg_exp, 1),
+                'pass_rate': round(pass_rate, 1)
+            })
+        
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        print(f"获取角色统计失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/dashboard/criteria-stats', methods=['GET'])
+def get_criteria_stats():
+    """获取各指标统计数据"""
+    try:
+        if not os.path.isfile(JSON_FILE):
+            return jsonify({"success": True, "data": []})
+        
+        with open(JSON_FILE, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        
+        if not all_data:
+            return jsonify({"success": True, "data": []})
+        
+        # 统计各指标
+        criteria_stats = {}
+        for test in all_data:
+            individual_scores = test.get('scores', {}).get('individual', {})
+            for criteria, score in individual_scores.items():
+                if criteria not in criteria_stats:
+                    criteria_stats[criteria] = []
+                criteria_stats[criteria].append(score)
+        
+        # 计算平均值
+        result = []
+        for criteria, scores in criteria_stats.items():
+            avg_score = sum(scores) / len(scores) if scores else 0
+            result.append({
+                'criteria': criteria,
+                'avg_score': round(avg_score, 2),
+                'count': len(scores)
+            })
+        
+        # 按平均分排序
+        result.sort(key=lambda x: x['avg_score'], reverse=True)
+        
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        print(f"获取指标统计失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/dashboard/trend', methods=['GET'])
+def get_trend_data():
+    """获取趋势数据"""
+    try:
+        if not os.path.isfile(JSON_FILE):
+            return jsonify({"success": True, "data": []})
+        
+        with open(JSON_FILE, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        
+        if not all_data:
+            return jsonify({"success": True, "data": []})
+        
+        # 按日期统计
+        daily_stats = {}
+        for test in all_data:
+            test_date = test.get('test_date', '')
+            if not test_date:
+                continue
+            
+            if test_date not in daily_stats:
+                daily_stats[test_date] = {
+                    'count': 0,
+                    'scores': [],
+                    'experience_scores': []
+                }
+            
+            daily_stats[test_date]['count'] += 1
+            avg_score = test.get('scores', {}).get('average', 0)
+            daily_stats[test_date]['scores'].append(avg_score)
+            
+            exp_score = test.get('evaluation', {}).get('experience_score', 0)
+            daily_stats[test_date]['experience_scores'].append(exp_score)
+        
+        # 计算每日平均值
+        result = []
+        for date, stats in sorted(daily_stats.items()):
+            avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 0
+            avg_exp = sum(stats['experience_scores']) / len(stats['experience_scores']) if stats['experience_scores'] else 0
+            
+            result.append({
+                'date': date,
+                'count': stats['count'],
+                'avg_score': round(avg_score, 2),
+                'avg_experience': round(avg_exp, 1)
+            })
+        
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        print(f"获取趋势数据失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/dashboard/recent-tests', methods=['GET'])
+def get_recent_tests():
+    """获取最近的测试记录"""
+    try:
+        limit = int(request.args.get('limit', 10))
+        
+        if not os.path.isfile(JSON_FILE):
+            return jsonify({"success": True, "data": []})
+        
+        with open(JSON_FILE, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        
+        if not all_data:
+            return jsonify({"success": True, "data": []})
+        
+        # 按时间戳排序，取最近的
+        sorted_data = sorted(all_data, key=lambda x: x.get('timestamp', ''), reverse=True)
+        recent_tests = sorted_data[:limit]
+        
+        # 提取关键信息
+        result = []
+        for test in recent_tests:
+            result.append({
+                'test_id': test.get('test_id', ''),
+                'timestamp': test.get('timestamp', ''),
+                'child_name': test.get('child', {}).get('name', ''),
+                'child_type': test.get('child', {}).get('type', ''),
+                'avg_score': test.get('scores', {}).get('average', 0),
+                'experience_score': test.get('evaluation', {}).get('experience_score', 0),
+                'rounds': test.get('rounds', 0),
+                'passed': test.get('scores', {}).get('average', 0) >= 7.0
+            })
+        
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        print(f"获取最近测试失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

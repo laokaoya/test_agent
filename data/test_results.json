@@ -913,5 +913,62 @@
       "avg_chars_child": 69.7,
       "avg_chars_ai": 109.3
     }
+  },
+  {
+    "test_id": "2025/10/18_174853_小熊",
+    "timestamp": "2025/10/18 17:48:53",
+    "test_date": "2025-10-18",
+    "child": {
+      "name": "小熊",
+      "age": 5,
+      "type": "害羞型",
+      "traits": "## 角色性格\n- 性格比较害羞\n- 说英语的时候会有点紧张\n- 经常只回答 Yes/No\n\n## 行为反应\n**正面反应：**\n- 如果 AI 一直夸你、语气温柔 → 你会逐渐多说一点\n\n**负面反应：**\n- 如果 AI 纠正你或者太快 → 你会沉默\n\n## 英语水平\n- 能听懂简单日常词汇（like, eat, play）\n- 会说三词句\n\n## 回答特点\n- 用孩子的语气回答\n- 不要超过 8 个词",
+      "opening": "Hello... I'm shy."
+    },
+    "conversations": [
+      {
+        "round": 1,
+        "user_message": "Hello... I'm shy.",
+        "ai_response": "Hi,乐乐！别害羞啦，咱们一起玩可好玩啦！我今天心情超棒，吃了一个好吃的apple，又大又甜！我最近学到“apple”这个英语单词啦，可有趣啦。你也大胆说说看“apple”嘛。\n\n我想到一个好玩的游戏，叫单词对战牌。咱们一起设计一下“力量规则”吧，你觉得什么样的单词更强呀？比如是长的单词更强，还是有字母o的单词厉害呢？ \n\n",
+        "timestamp": "2025-10-18 17:47:54"
+      },
+      {
+        "round": 2,
+        "user_message": "Apple... yes. Game fun. Long strong.",
+        "ai_response": "哇，你说出“apple”啦，太棒啦！那咱们就定长的单词更强。现在咱们各自抽一个单词牌来对战吧，我先抽，我抽到“table tennis”，该你抽啦！ \n\n",
+        "timestamp": "2025-10-18 17:48:11"
+      },
+      {
+        "round": 3,
+        "user_message": "Table tennis... I draw?",
+        "ai_response": "对呀对呀，轮到你抽啦！看看你抽到哪个单词，说不定能打败我的“table tennis”呢！加油加油！ \n\n",
+        "timestamp": "2025-10-18 17:48:23"
+      }
+    ],
+    "rounds": 3,
+    "scores": {
+      "individual": {
+        "难度动态调节": 5
+      },
+      "average": 5.0,
+      "max": 5,
+      "min": 5,
+      "std_dev": 0.0,
+      "criteria_used": [
+        "难度动态调节"
+      ]
+    },
+    "evaluation": {
+      "reason": "Gemini返回格式无法解析，使用默认评分5分",
+      "lessons": "无法生成经验教训",
+      "character_review": "（角色自述生成失败）",
+      "experience_score": 50
+    },
+    "statistics": {
+      "total_chars_child": 76,
+      "total_chars_ai": 293,
+      "avg_chars_child": 25.3,
+      "avg_chars_ai": 97.7
+    }
   }
 ]

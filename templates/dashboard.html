@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据可视化仪表盘 - AI测试平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px 0;
+        }
+        
+        .dashboard-header {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .stats-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .stats-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-box {
+            text-align: center;
+            padding: 15px;
+        }
+        
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .chart-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .badge-pass {
+            background: #28a745;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+        
+        .badge-fail {
+            background: #dc3545;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+        
+        .table-hover tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            border: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+        
+        .refresh-btn:hover {
+            background: #764ba2;
+            transform: rotate(180deg);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .empty-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        canvas {
+            max-height: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- 顶部导航 -->
+        <div class="dashboard-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2><i class="fas fa-chart-line"></i> 数据可视化仪表盘</h2>
+                    <p class="text-muted mb-0">AI儿童英语陪伴产品测试数据分析</p>
+                </div>
+                <div>
+                    <a href="/" class="btn btn-outline-primary">
+                        <i class="fas fa-arrow-left"></i> 返回测试
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 概览统计卡片 -->
+        <div class="row" id="summary-cards">
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card">
+                    <div class="stat-box">
+                        <i class="fas fa-flask fa-2x text-primary"></i>
+                        <div class="stat-value text-primary" id="total-tests">-</div>
+                        <div class="stat-label">累计测试</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card">
+                    <div class="stat-box">
+                        <i class="fas fa-calendar-day fa-2x text-success"></i>
+                        <div class="stat-value text-success" id="today-tests">-</div>
+                        <div class="stat-label">今日测试</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card">
+                    <div class="stat-box">
+                        <i class="fas fa-chart-pie fa-2x text-warning"></i>
+                        <div class="stat-value text-warning" id="pass-rate">-</div>
+                        <div class="stat-label">通过率</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card">
+                    <div class="stat-box">
+                        <i class="fas fa-star fa-2x text-danger"></i>
+                        <div class="stat-value text-danger" id="avg-score">-</div>
+                        <div class="stat-label">平均评分</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="row">
+            <!-- 角色表现对比 -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <div class="chart-title">
+                        <i class="fas fa-user-friends"></i> 各角色表现对比
+                    </div>
+                    <canvas id="roleChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 评分指标雷达图 -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <div class="chart-title">
+                        <i class="fas fa-chart-radar"></i> 评分指标雷达图
+                    </div>
+                    <canvas id="criteriaRadarChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 趋势分析 -->
+            <div class="col-lg-12">
+                <div class="chart-container">
+                    <div class="chart-title">
+                        <i class="fas fa-chart-area"></i> 评分趋势分析
+                    </div>
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 指标详细统计 -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <div class="chart-title">
+                        <i class="fas fa-list"></i> 各指标平均分
+                    </div>
+                    <canvas id="criteriaBarChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 最近测试记录 -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <div class="chart-title">
+                        <i class="fas fa-history"></i> 最近测试记录
+                    </div>
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                        <table class="table table-hover">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>时间</th>
+                                    <th>角色</th>
+                                    <th>评分</th>
+                                    <th>体验</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-tests-body">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 刷新按钮 -->
+        <button class="refresh-btn" onclick="refreshDashboard()" title="刷新数据">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 全局图表对象
+        let roleChart, criteriaRadarChart, trendChart, criteriaBarChart;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboard();
+            // 每30秒自动刷新
+            setInterval(refreshDashboard, 30000);
+        });
+
+        // 加载仪表盘数据
+        async function loadDashboard() {
+            try {
+                await Promise.all([
+                    loadSummary(),
+                    loadRoleStats(),
+                    loadCriteriaStats(),
+                    loadTrendData(),
+                    loadRecentTests()
+                ]);
+            } catch (error) {
+                console.error('加载仪表盘失败:', error);
+            }
+        }
+
+        // 加载概览数据
+        async function loadSummary() {
+            try {
+                const response = await fetch('/api/dashboard/summary');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.data;
+                    document.getElementById('total-tests').textContent = data.total_tests;
+                    document.getElementById('today-tests').textContent = data.today_tests;
+                    document.getElementById('pass-rate').textContent = data.total_pass_rate + '%';
+                    document.getElementById('avg-score').textContent = data.avg_score;
+                }
+            } catch (error) {
+                console.error('加载概览数据失败:', error);
+            }
+        }
+
+        // 加载角色统计
+        async function loadRoleStats() {
+            try {
+                const response = await fetch('/api/dashboard/role-stats');
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const data = result.data;
+                    
+                    // 角色对比柱状图
+                    const ctx = document.getElementById('roleChart');
+                    
+                    if (roleChart) {
+                        roleChart.destroy();
+                    }
+                    
+                    roleChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.map(d => d.role_type),
+                            datasets: [
+                                {
+                                    label: '平均评分',
+                                    data: data.map(d => d.avg_score),
+                                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                                    borderColor: 'rgba(102, 126, 234, 1)',
+                                    borderWidth: 2
+                                },
+                                {
+                                    label: '体验评分',
+                                    data: data.map(d => d.avg_experience),
+                                    backgroundColor: 'rgba(118, 75, 162, 0.8)',
+                                    borderColor: 'rgba(118, 75, 162, 1)',
+                                    borderWidth: 2
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        afterLabel: function(context) {
+                                            const index = context.dataIndex;
+                                            return `测试次数: ${data[index].count}\n通过率: ${data[index].pass_rate}%`;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 10,
+                                    title: {
+                                        display: true,
+                                        text: '评分'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('加载角色统计失败:', error);
+            }
+        }
+
+        // 加载指标统计
+        async function loadCriteriaStats() {
+            try {
+                const response = await fetch('/api/dashboard/criteria-stats');
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const data = result.data;
+                    
+                    // 雷达图
+                    const radarCtx = document.getElementById('criteriaRadarChart');
+                    if (criteriaRadarChart) {
+                        criteriaRadarChart.destroy();
+                    }
+                    
+                    criteriaRadarChart = new Chart(radarCtx, {
+                        type: 'radar',
+                        data: {
+                            labels: data.map(d => d.criteria),
+                            datasets: [{
+                                label: '平均得分',
+                                data: data.map(d => d.avg_score),
+                                backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                                borderColor: 'rgba(102, 126, 234, 1)',
+                                borderWidth: 2,
+                                pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                                pointBorderColor: '#fff',
+                                pointHoverBackgroundColor: '#fff',
+                                pointHoverBorderColor: 'rgba(102, 126, 234, 1)'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                r: {
+                                    beginAtZero: true,
+                                    max: 10,
+                                    ticks: {
+                                        stepSize: 2
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    
+                    // 柱状图
+                    const barCtx = document.getElementById('criteriaBarChart');
+                    if (criteriaBarChart) {
+                        criteriaBarChart.destroy();
+                    }
+                    
+                    // 取前10个指标
+                    const topData = data.slice(0, 10);
+                    
+                    criteriaBarChart = new Chart(barCtx, {
+                        type: 'horizontalBar',
+                        data: {
+                            labels: topData.map(d => d.criteria),
+                            datasets: [{
+                                label: '平均得分',
+                                data: topData.map(d => d.avg_score),
+                                backgroundColor: topData.map(d => {
+                                    if (d.avg_score >= 8) return 'rgba(40, 167, 69, 0.8)';
+                                    if (d.avg_score >= 7) return 'rgba(255, 193, 7, 0.8)';
+                                    return 'rgba(220, 53, 69, 0.8)';
+                                }),
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    beginAtZero: true,
+                                    max: 10,
+                                    title: {
+                                        display: true,
+                                        text: '平均分'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('加载指标统计失败:', error);
+            }
+        }
+
+        // 加载趋势数据
+        async function loadTrendData() {
+            try {
+                const response = await fetch('/api/dashboard/trend');
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const data = result.data;
+                    
+                    const ctx = document.getElementById('trendChart');
+                    if (trendChart) {
+                        trendChart.destroy();
+                    }
+                    
+                    trendChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.map(d => d.date),
+                            datasets: [
+                                {
+                                    label: '平均评分',
+                                    data: data.map(d => d.avg_score),
+                                    borderColor: 'rgba(102, 126, 234, 1)',
+                                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                                    borderWidth: 3,
+                                    fill: true,
+                                    tension: 0.4
+                                },
+                                {
+                                    label: '体验评分',
+                                    data: data.map(d => d.avg_experience),
+                                    borderColor: 'rgba(118, 75, 162, 1)',
+                                    backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                                    borderWidth: 3,
+                                    fill: true,
+                                    tension: 0.4
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    callbacks: {
+                                        afterLabel: function(context) {
+                                            const index = context.dataIndex;
+                                            return `测试次数: ${data[index].count}`;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 10,
+                                    title: {
+                                        display: true,
+                                        text: '评分'
+                                    }
+                                },
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: '日期'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('加载趋势数据失败:', error);
+            }
+        }
+
+        // 加载最近测试
+        async function loadRecentTests() {
+            try {
+                const response = await fetch('/api/dashboard/recent-tests?limit=10');
+                const result = await response.json();
+                
+                const tbody = document.getElementById('recent-tests-body');
+                
+                if (result.success && result.data.length > 0) {
+                    const data = result.data;
+                    
+                    tbody.innerHTML = data.map(test => `
+                        <tr>
+                            <td class="small">${test.timestamp.split(' ')[1]}</td>
+                            <td>
+                                <strong>${test.child_name}</strong>
+                                <br><small class="text-muted">${test.child_type}</small>
+                            </td>
+                            <td>
+                                <strong>${test.avg_score.toFixed(2)}</strong>/10
+                            </td>
+                            <td>
+                                <strong>${test.experience_score}</strong>/100
+                            </td>
+                            <td>
+                                ${test.passed ? 
+                                    '<span class="badge-pass">✓ 通过</span>' : 
+                                    '<span class="badge-fail">✗ 未通过</span>'
+                                }
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无测试数据</td></tr>';
+                }
+            } catch (error) {
+                console.error('加载最近测试失败:', error);
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败</td></tr>';
+            }
+        }
+
+        // 刷新仪表盘
+        function refreshDashboard() {
+            const btn = document.querySelector('.refresh-btn i');
+            btn.style.animation = 'spin 1s linear';
+            
+            loadDashboard().then(() => {
+                setTimeout(() => {
+                    btn.style.animation = '';
+                }, 1000);
+            });
+        }
+    </script>
+    
+    <style>
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</body>
+</html>
+

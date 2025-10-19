@@ -51,6 +51,17 @@
             padding: 10px;
             margin-bottom: 10px;
         }
+        .criteria-item.border-primary {
+            border: 2px solid #007bff;
+            background: #f0f8ff;
+        }
+        .card.border-secondary {
+            border-left: 3px solid #6c757d;
+        }
+        .card.border-secondary .card-header {
+            background: #e9ecef !important;
+            color: #495057 !important;
+        }
     </style>
 </head>
 <body>
@@ -112,6 +123,9 @@
                             <button class="btn btn-danger" onclick="stopAutoTest()" id="stop-auto-btn" style="display: none;">
                                 <i class="fas fa-stop"></i> 暂停自动测试
                             </button>
+                            <a href="/dashboard" class="btn btn-info" target="_blank">
+                                <i class="fas fa-chart-line"></i> 数据仪表盘
+                            </a>
                             <button class="btn btn-warning" onclick="clearResults()">
                                 <i class="fas fa-trash"></i> 清空结果
                             </button>
@@ -344,14 +358,19 @@
                     updatePresetCriteriaMenu();
                     console.log('✅ 内置评分标准加载成功:', Object.keys(presetCriteria).length, '个标准');
                     
-                    // 自动添加前三个预设评分标准作为默认标准
+                    // 只自动添加第一个预设评分标准的第一个二级指标作为默认标准
                     const criteriaIds = Object.keys(presetCriteria);
-                    const defaultCriteriaCount = Math.min(3, criteriaIds.length);
-                    for (let i = 0; i < defaultCriteriaCount; i++) {
-                        addPresetCriterion(criteriaIds[i]);
-                        addedCriteriaIds.add(criteriaIds[i]);
+                    if (criteriaIds.length > 0) {
+                        const firstMainCriteria = presetCriteria[criteriaIds[0]];
+                        if (firstMainCriteria.sub_criteria) {
+                            const subCriteriaIds = Object.keys(firstMainCriteria.sub_criteria);
+                            if (subCriteriaIds.length > 0) {
+                                // 添加第一个二级指标
+                                addSubCriterion(criteriaIds[0], subCriteriaIds[0]);
+                                console.log(`✅ 已自动添加默认评分标准: ${firstMainCriteria.sub_criteria[subCriteriaIds[0]].name}`);
+                            }
+                        }
                     }
-                    console.log(`✅ 已自动添加默认评分标准: ${defaultCriteriaCount} 个`);
                     // 更新菜单以排除已添加的标准
                     updatePresetCriteriaMenu();
                 } else {
@@ -369,27 +388,138 @@
             
             menu.innerHTML = '';
             
-            // 过滤掉已添加的标准
-            const availableCriteria = Object.entries(presetCriteria).filter(([id, criterion]) => !addedCriteriaIds.has(id));
+            // 过滤掉已添加的一级指标（检查是否整个一级指标都被添加了）
+            const availableCriteria = Object.entries(presetCriteria).filter(([id, criterion]) => {
+                // 检查是否整个一级指标都被添加了
+                const hasAllSubCriteria = criterion.sub_criteria && Object.keys(criterion.sub_criteria).every(subId => 
+                    addedCriteriaIds.has(`${id}.${subId}`)
+                );
+                return !addedCriteriaIds.has(id) && !hasAllSubCriteria;
+            });
             
             if (availableCriteria.length === 0) {
                 menu.innerHTML = '<li><a class="dropdown-item text-muted" href="#">所有标准已添加</a></li>';
                 return;
             }
             
-            // 动态生成菜单项（只显示未添加的标准）
+            // 动态生成菜单项（只显示未添加的一级指标）
             for (const [id, criterion] of availableCriteria) {
                 const menuItem = document.createElement('li');
                 menuItem.innerHTML = `
-                    <a class="dropdown-item" href="#" onclick="addPresetCriterion('${id}'); return false;">
-                        ⭐ ${criterion.name}
+                    <a class="dropdown-item" href="#" onclick="showSubCriteria('${id}'); return false;">
+                        <i class="fas fa-chevron-right"></i> ${criterion.name}
                     </a>
                 `;
                 menu.appendChild(menuItem);
             }
         }
 
-        // 添加预设评分标准
+        // 显示子指标选择弹窗
+        function showSubCriteria(criterionId) {
+            const criterion = presetCriteria[criterionId];
+            if (!criterion || !criterion.sub_criteria) return;
+            
+            // 创建模态弹窗
+            const modalHtml = `
+                <div class="modal fade" id="subCriteriaModal" tabindex="-1" aria-labelledby="subCriteriaModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title" id="subCriteriaModalLabel">
+                                    <i class="fas fa-list"></i> 选择 ${criterion.name} 的子指标
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="text-muted mb-3">${criterion.description}</p>
+                                <div class="row">
+                                    ${Object.entries(criterion.sub_criteria).map(([subId, subCriterion]) => {
+                                        const subCriterionId = `${criterionId}.${subId}`;
+                                        const isAdded = addedCriteriaIds.has(subCriterionId);
+                                        return `
+                                        <div class="col-md-6 mb-3">
+                                            <div class="card border-secondary ${isAdded ? 'opacity-50' : ''}">
+                                                <div class="card-header bg-light">
+                                                    <h6 class="mb-0">${subCriterion.name} ${isAdded ? '<span class="badge bg-success">已添加</span>' : ''}</h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <p class="small text-muted mb-2">${subCriterion.description}</p>
+                                                    ${isAdded ? 
+                                                        '<button class="btn btn-sm btn-outline-secondary" disabled><i class="fas fa-check"></i> 已添加</button>' :
+                                                        `<button class="btn btn-sm btn-outline-primary" onclick="addSubCriterion('${criterionId}', '${subId}'); return false;"><i class="fas fa-plus"></i> 添加此指标</button>`
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `}).join('')}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="fas fa-times"></i> 关闭
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // 移除已存在的模态弹窗
+            const existingModal = document.getElementById('subCriteriaModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // 添加新的模态弹窗
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // 显示模态弹窗
+            const modal = new bootstrap.Modal(document.getElementById('subCriteriaModal'));
+            modal.show();
+        }
+        
+        // 添加子指标
+        function addSubCriterion(criterionId, subId) {
+            const criterion = presetCriteria[criterionId];
+            if (!criterion || !criterion.sub_criteria || !criterion.sub_criteria[subId]) return;
+            
+            // 检查是否已经添加过这个子指标
+            const subCriterionId = `${criterionId}.${subId}`;
+            if (addedCriteriaIds.has(subCriterionId)) {
+                alert('该评分标准已经添加过了！');
+                return;
+            }
+            
+            const subCriterion = criterion.sub_criteria[subId];
+            const container = document.getElementById('criteria-container');
+            
+            // 创建子指标项
+            const criteriaItem = document.createElement('div');
+            criteriaItem.className = 'criteria-item';
+            criteriaItem.setAttribute('data-criterion-id', subCriterionId);
+            criteriaItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <input type="text" class="form-control form-control-sm" style="width: 70%;" placeholder="评分标准名称" value="${subCriterion.name}">
+                    <button class="btn btn-sm btn-outline-danger" onclick="removeCriteria(this)"><i class="fas fa-trash"></i></button>
+                </div>
+                <textarea class="form-control form-control-sm" rows="3" placeholder="描述如何评估这个标准..." style="font-size: 0.85rem;">${subCriterion.prompt}</textarea>
+            `;
+            container.appendChild(criteriaItem);
+            
+            // 记录已添加的标准ID
+            addedCriteriaIds.add(subCriterionId);
+            
+            // 关闭模态弹窗
+            const modal = bootstrap.Modal.getInstance(document.getElementById('subCriteriaModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // 更新菜单
+            updatePresetCriteriaMenu();
+        }
+        
+        // 添加预设评分标准（整个一级指标）
         function addPresetCriterion(criterionId) {
             const criterion = presetCriteria[criterionId];
             if (!criterion) return;
@@ -401,17 +531,55 @@
             }
             
             const container = document.getElementById('criteria-container');
-            const criteriaItem = document.createElement('div');
-            criteriaItem.className = 'criteria-item';
-            criteriaItem.setAttribute('data-criterion-id', criterionId); // 保存ID用于删除时识别
-            criteriaItem.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <input type="text" class="form-control form-control-sm" style="width: 70%;" placeholder="评分标准名称" value="${criterion.name}">
-                    <button class="btn btn-sm btn-outline-danger" onclick="removeCriteria(this)"><i class="fas fa-trash"></i></button>
-                </div>
-                <textarea class="form-control" rows="5" placeholder="描述如何评估这个标准...">${criterion.prompt}</textarea>
-            `;
-            container.appendChild(criteriaItem);
+            
+            // 检查是否是一级指标（有sub_criteria）
+            if (criterion.sub_criteria && Object.keys(criterion.sub_criteria).length > 0) {
+                // 一级指标：显示主指标和所有子指标
+                const mainItem = document.createElement('div');
+                mainItem.className = 'criteria-item border-primary';
+                mainItem.setAttribute('data-criterion-id', criterionId);
+                mainItem.innerHTML = `
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="fas fa-star"></i> ${criterion.name}</h6>
+                            <small>${criterion.description}</small>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                ${Object.entries(criterion.sub_criteria).map(([subId, subCriterion]) => `
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card border-secondary">
+                                            <div class="card-header bg-light">
+                                                <h6 class="mb-0">${subCriterion.name}</h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <textarea class="form-control form-control-sm" rows="3" placeholder="描述如何评估这个标准..." style="font-size: 0.85rem;">${subCriterion.prompt}</textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="text-end">
+                                <button class="btn btn-sm btn-outline-danger" onclick="removeCriteria(this)"><i class="fas fa-trash"></i> 删除整个指标组</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(mainItem);
+            } else {
+                // 二级指标或旧格式：显示单个指标
+                const criteriaItem = document.createElement('div');
+                criteriaItem.className = 'criteria-item';
+                criteriaItem.setAttribute('data-criterion-id', criterionId);
+                criteriaItem.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <input type="text" class="form-control form-control-sm" style="width: 70%;" placeholder="评分标准名称" value="${criterion.name}">
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeCriteria(this)"><i class="fas fa-trash"></i></button>
+                    </div>
+                    <textarea class="form-control" rows="5" placeholder="描述如何评估这个标准...">${criterion.prompt || ''}</textarea>
+                `;
+                container.appendChild(criteriaItem);
+            }
             
             // 记录已添加的标准ID
             addedCriteriaIds.add(criterionId);
@@ -443,14 +611,14 @@
             childCard.innerHTML = `
                 <div class="row">
                     <div class="col-md-6">
-                        <input type="text" class="form-control mb-2" placeholder="姓名" value="${preset.name}">
+                        <input type="text" class="form-control form-control-sm mb-2" placeholder="姓名" value="${preset.name}" style="font-size: 0.85rem;">
                     </div>
                     <div class="col-md-6">
-                        <input type="number" class="form-control mb-2" placeholder="年龄" value="${preset.age}">
+                        <input type="number" class="form-control form-control-sm mb-2" placeholder="年龄" value="${preset.age}" style="font-size: 0.85rem;">
                     </div>
                 </div>
-                <textarea class="form-control mb-2" placeholder="性格特点" rows="4">${preset.traits}</textarea>
-                <textarea class="form-control mb-2" placeholder="开场白" rows="2">${preset.opening}</textarea>
+                <textarea class="form-control form-control-sm mb-2" placeholder="性格特点" rows="4" style="font-size: 0.85rem;">${preset.traits}</textarea>
+                <textarea class="form-control form-control-sm mb-2" placeholder="开场白" rows="2" style="font-size: 0.85rem;">${preset.opening}</textarea>
                 <button class="btn btn-sm btn-danger" onclick="removeChildCard(this)"><i class="fas fa-trash"></i> 删除</button>
             `;
             container.appendChild(childCard);
@@ -469,14 +637,14 @@
             childCard.innerHTML = `
                 <div class="row">
                     <div class="col-md-6">
-                        <input type="text" class="form-control mb-2" placeholder="姓名" value="新角色">
+                        <input type="text" class="form-control form-control-sm mb-2" placeholder="姓名" value="新角色" style="font-size: 0.85rem;">
                     </div>
                     <div class="col-md-6">
-                        <input type="number" class="form-control mb-2" placeholder="年龄" value="8">
+                        <input type="number" class="form-control form-control-sm mb-2" placeholder="年龄" value="8" style="font-size: 0.85rem;">
                     </div>
                 </div>
-                <textarea class="form-control mb-2" placeholder="性格特点" rows="4">活泼好动，喜欢运动和游戏。</textarea>
-                <textarea class="form-control mb-2" placeholder="开场白" rows="2">你好！我们来玩个游戏吧！</textarea>
+                <textarea class="form-control form-control-sm mb-2" placeholder="性格特点" rows="4" style="font-size: 0.85rem;">活泼好动，喜欢运动和游戏。</textarea>
+                <textarea class="form-control form-control-sm mb-2" placeholder="开场白" rows="2" style="font-size: 0.85rem;">你好！我们来玩个游戏吧！</textarea>
                 <button class="btn btn-sm btn-danger" onclick="removeChildCard(this)"><i class="fas fa-trash"></i> 删除</button>
             `;
             container.appendChild(childCard);
@@ -512,7 +680,7 @@
                     <input type="text" class="form-control form-control-sm" style="width: 70%;" placeholder="评分标准名称" value="新评分标准">
                     <button class="btn btn-sm btn-outline-danger" onclick="removeCriteria(this)"><i class="fas fa-trash"></i></button>
                 </div>
-                <textarea class="form-control" rows="3" placeholder="描述如何评估这个标准..."></textarea>
+                <textarea class="form-control form-control-sm" rows="3" placeholder="描述如何评估这个标准..." style="font-size: 0.85rem;"></textarea>
             `;
             container.appendChild(criteriaItem);
         }
@@ -527,12 +695,19 @@
                 
                 // 如果是预设标准，从已添加集合中移除
                 if (criterionId) {
-                    addedCriteriaIds.delete(criterionId);
+                    // 检查是否是子指标（包含点号）
+                    if (criterionId.includes('.')) {
+                        // 子指标：只移除这个子指标
+                        addedCriteriaIds.delete(criterionId);
+                    } else {
+                        // 一级指标：移除整个指标组
+                        addedCriteriaIds.delete(criterionId);
+                    }
                     // 更新菜单，该标准可以再次添加
                     updatePresetCriteriaMenu();
                     console.log('✅ 已移除评分标准:', criterionId);
                 }
-                } else {
+            } else {
                 alert('至少需要保留一个评分标准');
             }
         }
@@ -554,10 +729,44 @@
             // 收集动态评分标准
             const criteria = {};
             document.querySelectorAll('.criteria-item').forEach((item, index) => {
-                const nameInput = item.querySelector('input[type="text"]');
-                const textarea = item.querySelector('textarea');
-                const criteriaName = nameInput.value.trim() || `评分标准${index + 1}`;
-                criteria[criteriaName] = textarea.value;
+                const criterionId = item.getAttribute('data-criterion-id');
+                
+                // 检查是否是一级指标（有子指标）
+                const subCards = item.querySelectorAll('.card.border-secondary');
+                if (subCards.length > 0) {
+                    // 一级指标：构建包含子指标的结构
+                    const mainCard = item.querySelector('.card-header h6');
+                    const mainName = mainCard ? mainCard.textContent.trim() : `一级指标${index + 1}`;
+                    const mainDescription = item.querySelector('.card-header small') ? item.querySelector('.card-header small').textContent.trim() : '';
+                    
+                    const subCriteria = {};
+                    subCards.forEach(subCard => {
+                        const subName = subCard.querySelector('.card-header h6').textContent.trim();
+                        const subTextarea = subCard.querySelector('textarea');
+                        const subPrompt = subTextarea ? subTextarea.value : '';
+                        subCriteria[subName] = subPrompt;
+                    });
+                    
+                    criteria[mainName] = {
+                        name: mainName,
+                        description: mainDescription,
+                        sub_criteria: subCriteria
+                    };
+                } else {
+                    // 二级指标或旧格式：单个指标
+                    const nameInput = item.querySelector('input[type="text"]');
+                    const textarea = item.querySelector('textarea');
+                    const criteriaName = nameInput ? nameInput.value.trim() : `评分标准${index + 1}`;
+                    
+                    // 检查是否是子指标（criterionId包含点号）
+                    if (criterionId && criterionId.includes('.')) {
+                        // 子指标：构建为平级结构，但标记为子指标
+                        criteria[criteriaName] = textarea ? textarea.value : '';
+                    } else {
+                        // 普通指标
+                        criteria[criteriaName] = textarea ? textarea.value : '';
+                    }
+                }
             });
 
             // 显示实时进度
@@ -917,8 +1126,14 @@
                 if (typeof detail !== 'string') {
                     detail = String(detail) || '暂无详细理由';
                 }
+                
+                // 检查是否是一级指标（包含子指标）
+                const isMainCriteria = key.includes('.');
+                const displayName = isMainCriteria ? key.split('.')[1] : key;
+                const mainCriteriaName = isMainCriteria ? key.split('.')[0] : null;
+                
                 const colors = ['primary', 'success', 'warning', 'info', 'danger', 'secondary', 'dark'];
-                            const color = colors[i % colors.length];
+                const color = colors[i % colors.length];
                 
                 // 根据分数选择图标
                 let icon = 'fa-star';
@@ -927,17 +1142,25 @@
                 else if (score >= 5) icon = 'fa-minus-circle text-primary';
                 else icon = 'fa-times-circle text-danger';
                 
-                            return `
-                    <div class="card mb-2">
-                        <div class="card-header bg-${color} text-white d-flex justify-content-between align-items-center">
-                            <span><i class="fas ${icon}"></i> ${key}</span>
-                            <span class="badge bg-light text-dark">${score} 分</span>
+                // 如果是一级指标的子指标，添加特殊样式
+                const cardClass = isMainCriteria ? 'border-start border-4 border-primary' : '';
+                const headerClass = isMainCriteria ? 'bg-light text-dark' : `bg-${color} text-white`;
+                
+                return `
+                    <div class="card mb-2 ${cardClass}">
+                        <div class="card-header ${headerClass} d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="fas ${icon}"></i> 
+                                ${isMainCriteria ? `<small class="text-muted">${mainCriteriaName} → </small>` : ''}
+                                ${displayName}
+                            </span>
+                            <span class="badge ${isMainCriteria ? 'bg-primary' : 'bg-light text-dark'}">${score} 分</span>
                         </div>
                         <div class="card-body">
                             <small style="white-space: pre-wrap;">${detail}</small>
                         </div>
-                                </div>
-                            `;
+                    </div>
+                `;
             }).join('');
             
             // 格式化经验教训（保留换行和列表格式）

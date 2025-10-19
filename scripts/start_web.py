@@ -18,6 +18,9 @@ if sys.platform == 'win32':
     # 设置环境变量
     os.environ['PYTHONIOENCODING'] = 'utf-8'
 
+# 添加父目录到路径，以便导入app模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app import app
 
 def open_browser():
