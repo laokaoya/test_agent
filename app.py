@@ -54,22 +54,171 @@ USE_CONVERSATION_ID = True
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 CSV_FILE = "test_results.csv"
-csv_lock = threading.Lock()
+JSON_FILE = "test_results.json"
+file_lock = threading.Lock()
+
+def save_to_json(test_data):
+    """保存测试结果到JSON文件（完整数据）"""
+    try:
+        with file_lock:
+            # 读取现有JSON数据
+            if os.path.isfile(JSON_FILE):
+                with open(JSON_FILE, 'r', encoding='utf-8') as f:
+                    try:
+                        all_data = json.load(f)
+                    except json.JSONDecodeError:
+                        all_data = []
+            else:
+                all_data = []
+            
+            # 生成唯一测试ID
+            timestamp_str = test_data.get('timestamp', datetime.now().strftime('%Y%m%d%H%M%S'))
+            test_id = f"{timestamp_str.replace('-', '').replace(':', '').replace(' ', '_')}_{test_data.get('child_name', 'unknown')}"
+            
+            # 解析日期
+            try:
+                test_datetime = datetime.strptime(test_data.get('timestamp', ''), '%Y-%m-%d %H:%M:%S')
+                test_date = test_datetime.strftime('%Y-%m-%d')
+            except:
+                test_date = datetime.now().strftime('%Y-%m-%d')
+            
+            # 提取角色类型
+            child_type = ''
+            traits = test_data.get('child_traits', '')
+            if '害羞' in traits:
+                child_type = '害羞型'
+            elif '话多' in traits:
+                child_type = '话多型'
+            elif '好奇' in traits:
+                child_type = '好奇型'
+            elif '自信' in traits:
+                child_type = '自信型'
+            elif '抗拒' in traits:
+                child_type = '抗拒型'
+            
+            # 计算统计数据
+            conversations = test_data.get('conversations', [])
+            actual_rounds = len(conversations)
+            total_child_chars = sum(len(conv.get('user_message', '')) for conv in conversations)
+            total_ai_chars = sum(len(conv.get('ai_response', '')) for conv in conversations)
+            
+            scores = test_data.get('scores', {})
+            if scores:
+                score_values = list(scores.values())
+                avg_score = sum(score_values) / len(score_values)
+                max_score = max(score_values)
+                min_score = min(score_values)
+                variance = sum((x - avg_score) ** 2 for x in score_values) / len(score_values)
+                std_dev = variance ** 0.5
+            else:
+                avg_score = max_score = min_score = std_dev = 0
+            
+            # 构建完整记录
+            record = {
+                'test_id': test_id,
+                'timestamp': test_data.get('timestamp', ''),
+                'test_date': test_date,
+                'child': {
+                    'name': test_data.get('child_name', ''),
+                    'age': test_data.get('child_age', ''),
+                    'type': child_type,
+                    'traits': test_data.get('child_traits', ''),
+                    'opening': test_data.get('opening', '')
+                },
+                'conversations': conversations,
+                'rounds': actual_rounds,
+                'scores': {
+                    'individual': scores,
+                    'average': round(avg_score, 2),
+                    'max': max_score,
+                    'min': min_score,
+                    'std_dev': round(std_dev, 2),
+                    'criteria_used': list(scores.keys())
+                },
+                'evaluation': {
+                    'reason': test_data.get('reason', ''),
+                    'lessons': test_data.get('lessons', ''),
+                    'character_review': test_data.get('character_review', ''),
+                    'experience_score': test_data.get('experience_score', 50)
+                },
+                'statistics': {
+                    'total_chars_child': total_child_chars,
+                    'total_chars_ai': total_ai_chars,
+                    'avg_chars_child': round(total_child_chars / actual_rounds, 1) if actual_rounds > 0 else 0,
+                    'avg_chars_ai': round(total_ai_chars / actual_rounds, 1) if actual_rounds > 0 else 0
+                }
+            }
+            
+            # 添加到列表
+            all_data.append(record)
+            
+            # 保存JSON文件
+            with open(JSON_FILE, 'w', encoding='utf-8') as f:
+                json.dump(all_data, f, ensure_ascii=False, indent=2)
+            
+        return True
+    except Exception as e:
+        print(f"保存JSON失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def save_to_csv(test_data):
-    """保存测试结果到CSV文件"""
+    """保存测试结果到CSV文件（简化版，评分用JSON）"""
     try:
-        with csv_lock:
+        with file_lock:
             file_exists = os.path.isfile(CSV_FILE)
             
             # 固定最多支持10轮对话的CSV结构
             MAX_CSV_ROUNDS = 10
             
             with open(CSV_FILE, 'a', newline='', encoding='utf-8-sig') as f:
-                fieldnames = ['测试时间', '角色名称', '角色年龄', '性格特点', '开场白', '对话轮数']
-                for i in range(1, MAX_CSV_ROUNDS + 1):
-                    fieldnames.extend([f'第{i}轮-孩子', f'第{i}轮-AI'])
-                fieldnames.extend(['评分标准', '各项得分', '平均分', '评分理由', '经验教训', '角色自述'])
+                # ========== 简化的列名设计（固定列）==========
+                # 1. 基础信息
+                fieldnames = [
+                    '测试ID',           # 唯一标识符
+                    '测试时间',         # 时间戳
+                    '测试日期',         # 日期
+                    '角色名称',         # 角色名
+                    '角色类型',         # 害羞型/话多型等
+                    '角色年龄',         # 年龄
+                    '对话轮数',         # 实际轮数
+                ]
+                
+                # 2. 对话内容（使用JSON字符串存储）
+                fieldnames.append('对话记录_JSON')
+                
+                # 3. 评分数据（使用JSON字符串，避免动态列）
+                fieldnames.extend([
+                    '评分详情_JSON',      # 各项评分（JSON格式）
+                    '评分_平均分',        # 平均分
+                    '评分_最高分',        # 最高分
+                    '评分_最低分',        # 最低分
+                    '评分_标准差',        # 标准差
+                    '使用的评分标准',     # 标准列表
+                    '角色体验评分',       # 角色给出的0-100分体验评分
+                ])
+                
+                # 4. 对话统计
+                fieldnames.extend([
+                    '总字数_孩子',
+                    '总字数_AI',
+                    '平均字数_孩子',
+                    '平均字数_AI',
+                ])
+                
+                # 5. 评价内容
+                fieldnames.extend([
+                    '评分理由_总体',
+                    '经验教训',
+                    '角色自述',
+                ])
+                
+                # 6. 元数据
+                fieldnames.extend([
+                    '角色完整设定',
+                    '开场白',
+                ])
                 
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 
@@ -79,44 +228,119 @@ def save_to_csv(test_data):
                 conversations = test_data.get('conversations', [])
                 actual_rounds = len(conversations)
                 
+                # 生成唯一测试ID（时间戳+角色名）
+                timestamp_str = test_data.get('timestamp', datetime.now().strftime('%Y%m%d%H%M%S'))
+                test_id = f"{timestamp_str.replace('-', '').replace(':', '').replace(' ', '_')}_{test_data.get('child_name', 'unknown')}"
+                
+                # 解析日期
+                try:
+                    test_datetime = datetime.strptime(test_data.get('timestamp', ''), '%Y-%m-%d %H:%M:%S')
+                    test_date = test_datetime.strftime('%Y-%m-%d')
+                except:
+                    test_date = datetime.now().strftime('%Y-%m-%d')
+                
+                # 提取角色类型（从性格特点中尝试提取）
+                child_type = ''
+                traits = test_data.get('child_traits', '')
+                # 尝试从Markdown格式中提取类型
+                if '害羞' in traits:
+                    child_type = '害羞型'
+                elif '话多' in traits:
+                    child_type = '话多型'
+                elif '好奇' in traits:
+                    child_type = '好奇型'
+                elif '自信' in traits:
+                    child_type = '自信型'
+                elif '抗拒' in traits:
+                    child_type = '抗拒型'
+                
+                # 基础信息
                 row = {
+                    '测试ID': test_id,
                     '测试时间': test_data.get('timestamp', ''),
+                    '测试日期': test_date,
                     '角色名称': test_data.get('child_name', ''),
+                    '角色类型': child_type,
                     '角色年龄': test_data.get('child_age', ''),
-                    '性格特点': test_data.get('child_traits', ''),
-                    '开场白': test_data.get('opening', ''),
-                    '对话轮数': actual_rounds
+                    '对话轮数': actual_rounds,
                 }
                 
-                # 填充实际对话数据
+                # 对话内容和字数统计（存储为JSON）
+                total_child_chars = 0
+                total_ai_chars = 0
+                
+                conversation_data = []
                 for i, conv in enumerate(conversations, 1):
-                    row[f'第{i}轮-孩子'] = conv.get('user_message', '')
-                    row[f'第{i}轮-AI'] = conv.get('ai_response', '')
+                    child_msg = conv.get('user_message', '')
+                    ai_msg = conv.get('ai_response', '')
+                    
+                    child_chars = len(child_msg)
+                    ai_chars = len(ai_msg)
+                    
+                    total_child_chars += child_chars
+                    total_ai_chars += ai_chars
+                    
+                    conversation_data.append({
+                        'round': i,
+                        'child_message': child_msg,
+                        'ai_response': ai_msg,
+                        'child_chars': child_chars,
+                        'ai_chars': ai_chars
+                    })
                 
-                # 未使用的轮次用空值填充
-                for i in range(actual_rounds + 1, MAX_CSV_ROUNDS + 1):
-                    row[f'第{i}轮-孩子'] = ''
-                    row[f'第{i}轮-AI'] = ''
+                row['对话记录_JSON'] = json.dumps(conversation_data, ensure_ascii=False)
                 
+                # 评分数据（使用JSON字符串）
                 scores = test_data.get('scores', {})
-                row['评分标准'] = test_data.get('criteria_names', '')
-                row['各项得分'] = json.dumps(scores, ensure_ascii=False)
+                criteria_names = list(scores.keys())
+                row['评分详情_JSON'] = json.dumps(scores, ensure_ascii=False)
                 
+                # 统计指标
                 if scores:
-                    avg_score = sum(scores.values()) / len(scores)
-                    row['平均分'] = f"{avg_score:.2f}"
+                    score_values = list(scores.values())
+                    avg_score = sum(score_values) / len(score_values)
+                    max_score = max(score_values)
+                    min_score = min(score_values)
+                    
+                    # 计算标准差
+                    variance = sum((x - avg_score) ** 2 for x in score_values) / len(score_values)
+                    std_dev = variance ** 0.5
+                    
+                    row['评分_平均分'] = f"{avg_score:.2f}"
+                    row['评分_最高分'] = max_score
+                    row['评分_最低分'] = min_score
+                    row['评分_标准差'] = f"{std_dev:.2f}"
                 else:
-                    row['平均分'] = ''
+                    row['评分_平均分'] = ''
+                    row['评分_最高分'] = ''
+                    row['评分_最低分'] = ''
+                    row['评分_标准差'] = ''
                 
-                row['评分理由'] = test_data.get('reason', '')
+                row['使用的评分标准'] = ', '.join(criteria_names)
+                row['角色体验评分'] = test_data.get('experience_score', '')
+                
+                # 对话统计
+                row['总字数_孩子'] = total_child_chars
+                row['总字数_AI'] = total_ai_chars
+                row['平均字数_孩子'] = f"{total_child_chars / actual_rounds:.1f}" if actual_rounds > 0 else '0'
+                row['平均字数_AI'] = f"{total_ai_chars / actual_rounds:.1f}" if actual_rounds > 0 else '0'
+                
+                # 评价内容
+                row['评分理由_总体'] = test_data.get('reason', '')
                 row['经验教训'] = test_data.get('lessons', '')
                 row['角色自述'] = test_data.get('character_review', '')
+                
+                # 元数据
+                row['角色完整设定'] = test_data.get('child_traits', '')
+                row['开场白'] = test_data.get('opening', '')
                 
                 writer.writerow(row)
                 
         return True
     except Exception as e:
         print(f"保存CSV失败: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def query_dify_agent(message, conversation_id=None, custom_api_key=None):
@@ -133,7 +357,7 @@ def query_dify_agent(message, conversation_id=None, custom_api_key=None):
         }
         
         data = {
-            "query": message,
+            "query": message, 
             "user": "test_user",
             "response_mode": "blocking",
             "inputs": {}
@@ -141,7 +365,7 @@ def query_dify_agent(message, conversation_id=None, custom_api_key=None):
         
         if USE_CONVERSATION_ID and conversation_id:
             data["conversation_id"] = conversation_id
-        
+
         response = session.post(
             DIFY_API_URL,
             json=data,
@@ -157,7 +381,7 @@ def query_dify_agent(message, conversation_id=None, custom_api_key=None):
             return answer, conv_id
         else:
             return "", None
-            
+
     except Exception as e:
         return "", None
     finally:
@@ -283,11 +507,12 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
   }},
   "reason": "【严苛总评】从孩子的角度看，AI的主要问题是...（必须具体，引用对话，不留情面地指出不足）",
   "lessons": "【改进建议】分条列出：\\n1. ❌ 主要问题：（最严重的问题是什么，引用对话）\\n2. ⚠️ 次要问题：（还有哪些问题，具体说明）\\n3. 💡 改进方向：（如果重做，应该如何改进，给出3-5条具体建议）",
-  "character_review": "【角色自述】用孩子的第一人称口吻，让孩子自己说说这次对话的感受（必须完全符合角色性格、年龄、说话方式）"
+  "character_review": "【角色自述】用孩子的第一人称口吻，让孩子自己说说这次对话的感受（必须完全符合角色性格、年龄、说话方式）",
+  "experience_score": 介于1-100的一个数字
 }}
 
 【最终提醒】
-1. 你的评分必须让人觉得"这个评价者真严格"
+1. 你的评分必须让人觉得"这个评价者很严格"
 2. 只有真正优秀的表现才能得7分以上
 3. 大部分表现应该在4-6分范围
 4. 必须找出至少3个具体问题，即使整体还可以
@@ -298,7 +523,14 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
    - 好奇型孩子：全是问题和疑惑
    - 自信型孩子：自信、有主见、可能有点批评的味道
    - 抗拒型孩子：可能说"还行吧"、"有点无聊"
-7. 只输出JSON，不要```json```包裹"""
+7. experience_score（体验评分）：0-100分，站在孩子的角度评价这次对话的整体体验，1分1档，不要只给几个固定的分数
+   - 90-100分：超级开心，非常想继续聊
+   - 70-89分：挺好的，愿意继续聊
+   - 50-69分：还行吧，有点意思但不太激动
+   - 30-49分：有点无聊，不太想继续
+   - 0-29分：很不喜欢，不想再聊了
+   - 要基于孩子的真实感受打分，不要因为AI"做了什么"就给高分
+8. 只输出JSON，不要```json```包裹"""
 
         response = current_client.models.generate_content(
             model="gemini-2.5-flash",
@@ -330,7 +562,8 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
                 "score_details": default_details,
                 "reason": "Gemini返回格式无法解析，使用默认评分5分",
                 "lessons": "无法生成经验教训",
-                "character_review": "（角色自述生成失败）"
+                "character_review": "（角色自述生成失败）",
+                "experience_score": 50
             }
     except Exception as e:
         print(f"❌ Gemini评分异常: {e}")
@@ -341,7 +574,8 @@ def evaluate_with_gemini(child_prompt, conversation_history, criteria, custom_ap
             "score_details": default_details,
             "reason": f"评分失败: {str(e)}",
             "lessons": "评分异常，无法生成经验教训",
-            "character_review": "（角色自述生成失败）"
+            "character_review": "（角色自述生成失败）",
+            "experience_score": 50
         }
 
 
@@ -465,12 +699,13 @@ def evaluate():
         "reason": eval_result.get("reason", ""),
         "lessons": eval_result.get("lessons", ""),
         "character_review": eval_result.get("character_review", ""),
+        "experience_score": eval_result.get("experience_score", 50),
         "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     })
 
 @app.route('/api/save-result', methods=['POST'])
 def save_result():
-    """保存测试结果到CSV"""
+    """保存测试结果到JSON和CSV"""
     data = request.json
     
     test_data = {
@@ -484,20 +719,33 @@ def save_result():
         'criteria_names': ', '.join(data.get('criteria', {}).keys()),
         'reason': data.get('reason', ''),
         'lessons': data.get('lessons', ''),
-        'character_review': data.get('character_review', '')
+        'character_review': data.get('character_review', ''),
+        'experience_score': data.get('experience_score', 50)
     }
     
-    success = save_to_csv(test_data)
+    # 同时保存到JSON和CSV
+    json_success = save_to_json(test_data)
+    csv_success = save_to_csv(test_data)
     
-    if success:
+    if json_success and csv_success:
             return jsonify({
             "success": True,
-            "message": "测试结果已保存到CSV"
+            "message": "测试结果已保存到JSON和CSV"
+        })
+    elif json_success:
+            return jsonify({
+            "success": True,
+            "message": "测试结果已保存到JSON（CSV保存失败）"
+        })
+    elif csv_success:
+            return jsonify({
+            "success": True,
+            "message": "测试结果已保存到CSV（JSON保存失败）"
         })
     else:
-        return jsonify({
-            "success": False,
-            "message": "保存CSV失败"
+            return jsonify({
+                "success": False,
+            "message": "保存失败"
         }), 500
 
 if __name__ == '__main__':

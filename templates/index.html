@@ -67,11 +67,11 @@
                         <h5><i class="fas fa-child"></i> 测试角色</h5>
                         <div id="children-container">
                             <!-- 默认角色将自动加载 -->
-                        </div>
+                                    </div>
                         <div class="d-flex gap-2 mb-3">
-                            <button class="btn btn-outline-primary btn-sm" onclick="addChild()">
+                        <button class="btn btn-outline-primary btn-sm" onclick="addChild()">
                                 <i class="fas fa-plus"></i> 添加自定义角色
-                            </button>
+                        </button>
                             <div class="dropdown">
                                 <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-user-plus"></i> 快速添加内置角色
@@ -86,11 +86,11 @@
                         <h5 class="mt-4"><i class="fas fa-chart-line"></i> 评分标准</h5>
                         <div id="criteria-container">
                             <!-- 默认评分标准将自动加载 -->
-                        </div>
+                                </div>
                         <div class="d-flex gap-2 mb-3">
-                            <button class="btn btn-outline-primary btn-sm" onclick="addCriteria()">
+                        <button class="btn btn-outline-primary btn-sm" onclick="addCriteria()">
                                 <i class="fas fa-plus"></i> 添加自定义标准
-                            </button>
+                        </button>
                             <div class="dropdown">
                                 <button class="btn btn-success btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-star"></i> 快速添加内置标准
@@ -103,12 +103,30 @@
 
                         <!-- 操作按钮 -->
                         <div class="d-grid gap-2 mt-4">
-                            <button class="btn btn-primary" onclick="runTest()">
+                            <button class="btn btn-primary" onclick="runTest()" id="start-test-btn">
                                 <i class="fas fa-play"></i> 开始测试
+                            </button>
+                            <button class="btn btn-success" onclick="startAutoTest()" id="auto-test-btn">
+                                <i class="fas fa-sync-alt"></i> 自动循环测试
+                            </button>
+                            <button class="btn btn-danger" onclick="stopAutoTest()" id="stop-auto-btn" style="display: none;">
+                                <i class="fas fa-stop"></i> 暂停自动测试
                             </button>
                             <button class="btn btn-warning" onclick="clearResults()">
                                 <i class="fas fa-trash"></i> 清空结果
                             </button>
+                        </div>
+                        
+                        <!-- 自动测试统计 -->
+                        <div id="auto-test-stats" class="mt-3" style="display: none;">
+                            <div class="alert alert-info">
+                                <h6 class="mb-2"><i class="fas fa-chart-line"></i> 自动测试统计</h6>
+                                <div class="small">
+                                    <div>已完成测试：<strong id="test-count">0</strong> 次</div>
+                                    <div>运行时间：<strong id="test-duration">00:00:00</strong></div>
+                                    <div>当前状态：<strong id="test-status">运行中</strong></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -215,6 +233,12 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ========== 自动测试全局变量 ==========
+        let isAutoTestRunning = false;  // 是否正在自动测试
+        let autoTestCount = 0;           // 已完成的测试次数
+        let autoTestStartTime = null;    // 自动测试开始时间
+        let autoTestTimer = null;        // 计时器
+        
         // 切换密码可见性
         function togglePasswordVisibility(inputId) {
             const input = document.getElementById(inputId);
@@ -508,7 +532,7 @@
                     updatePresetCriteriaMenu();
                     console.log('✅ 已移除评分标准:', criterionId);
                 }
-            } else {
+                } else {
                 alert('至少需要保留一个评分标准');
             }
         }
@@ -543,6 +567,106 @@
             for (let i = 0; i < children.length; i++) {
                 await runRealTimeTest(children[i], criteria, i);
             }
+            
+            // 如果是自动测试模式，完成后自动开始下一轮
+            if (isAutoTestRunning) {
+                autoTestCount++;
+                document.getElementById('test-count').textContent = autoTestCount;
+                
+                // 等待1秒后开始下一轮测试
+                setTimeout(() => {
+                    if (isAutoTestRunning) {
+                        console.log(`✅ 第${autoTestCount}轮测试完成，准备开始第${autoTestCount + 1}轮...`);
+                        runTest();  // 递归调用，开始新一轮
+                    }
+                }, 1000);
+            }
+        }
+        
+        // ========== 自动测试功能 ==========
+        
+        // 启动自动循环测试
+        function startAutoTest() {
+            if (isAutoTestRunning) {
+                alert('自动测试已经在运行中！');
+                return;
+            }
+            
+            // 确认开始
+            if (!confirm('确定要开始自动循环测试吗？\n\n测试将持续运行直到您点击"暂停"按钮。\n每轮测试完成后会自动开始下一轮，所有数据会持续保存。')) {
+                return;
+            }
+            
+            // 设置状态
+            isAutoTestRunning = true;
+            autoTestCount = 0;
+            autoTestStartTime = new Date();
+            
+            // 更新UI
+            document.getElementById('auto-test-btn').style.display = 'none';
+            document.getElementById('start-test-btn').style.display = 'none';
+            document.getElementById('stop-auto-btn').style.display = 'block';
+            document.getElementById('auto-test-stats').style.display = 'block';
+            document.getElementById('test-status').textContent = '运行中';
+            document.getElementById('test-count').textContent = '0';
+            
+            // 启动计时器
+            autoTestTimer = setInterval(updateTestDuration, 1000);
+            
+            // 开始第一轮测试
+            console.log('🚀 自动测试已启动');
+            runTest();
+        }
+        
+        // 停止自动测试
+        function stopAutoTest() {
+            if (!isAutoTestRunning) {
+                return;
+            }
+            
+            // 确认停止
+            if (!confirm(`确定要停止自动测试吗？\n\n已完成 ${autoTestCount} 轮测试。`)) {
+                return;
+            }
+            
+            // 设置状态
+            isAutoTestRunning = false;
+            
+            // 清除计时器
+            if (autoTestTimer) {
+                clearInterval(autoTestTimer);
+                autoTestTimer = null;
+            }
+            
+            // 更新UI
+            document.getElementById('auto-test-btn').style.display = 'block';
+            document.getElementById('start-test-btn').style.display = 'block';
+            document.getElementById('stop-auto-btn').style.display = 'none';
+            document.getElementById('test-status').textContent = '已停止';
+            
+            console.log(`⏸️ 自动测试已停止，共完成 ${autoTestCount} 轮测试`);
+            
+            // 3秒后隐藏统计信息
+            setTimeout(() => {
+                if (!isAutoTestRunning) {
+                    document.getElementById('auto-test-stats').style.display = 'none';
+                }
+            }, 3000);
+        }
+        
+        // 更新运行时间显示
+        function updateTestDuration() {
+            if (!autoTestStartTime) return;
+            
+            const now = new Date();
+            const duration = Math.floor((now - autoTestStartTime) / 1000);
+            
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            const seconds = duration % 60;
+            
+            const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            document.getElementById('test-duration').textContent = timeStr;
         }
 
         // 实时对话测试
@@ -745,6 +869,7 @@
                     reason: evalResult.reason || "评分完成",
                     lessons: evalResult.lessons || "暂无经验教训",
                     character_review: evalResult.character_review || "",
+                    experience_score: evalResult.experience_score || 50,
                     timestamp: new Date().toLocaleString()
                 };
                 
@@ -752,7 +877,7 @@
                 displayFinalResults(conversationContainer, result, progressText);
                 
                 // 保存到CSV
-                await saveResultToCSV(child, criteria, conversationLog, evalResult.scores, evalResult.reason, evalResult.lessons, evalResult.character_review);
+                await saveResultToCSV(child, criteria, conversationLog, evalResult.scores, evalResult.reason, evalResult.lessons, evalResult.character_review, evalResult.experience_score);
                 
             } catch (error) {
                 console.error('评分过程出错:', error);
@@ -768,12 +893,13 @@
                     reason: "评分过程出错：" + error.message,
                     lessons: "评分失败，无法生成经验教训",
                     character_review: "",
+                    experience_score: 50,
                     timestamp: new Date().toLocaleString()
                 };
                 displayFinalResults(conversationContainer, result, progressText);
                 
                 // 即使评分失败，也保存对话记录到CSV
-                await saveResultToCSV(child, criteria, conversationLog, {}, "评分过程出错：" + error.message, "", "");
+                await saveResultToCSV(child, criteria, conversationLog, {}, "评分过程出错：" + error.message, "", "", 50);
             }
         }
 
@@ -792,7 +918,7 @@
                     detail = String(detail) || '暂无详细理由';
                 }
                 const colors = ['primary', 'success', 'warning', 'info', 'danger', 'secondary', 'dark'];
-                const color = colors[i % colors.length];
+                            const color = colors[i % colors.length];
                 
                 // 根据分数选择图标
                 let icon = 'fa-star';
@@ -801,7 +927,7 @@
                 else if (score >= 5) icon = 'fa-minus-circle text-primary';
                 else icon = 'fa-times-circle text-danger';
                 
-                return `
+                            return `
                     <div class="card mb-2">
                         <div class="card-header bg-${color} text-white d-flex justify-content-between align-items-center">
                             <span><i class="fas ${icon}"></i> ${key}</span>
@@ -810,8 +936,8 @@
                         <div class="card-body">
                             <small style="white-space: pre-wrap;">${detail}</small>
                         </div>
-                    </div>
-                `;
+                                </div>
+                            `;
             }).join('');
             
             // 格式化经验教训（保留换行和列表格式）
@@ -847,6 +973,49 @@
                 </div>
             ` : '';
             
+            // 体验评分显示（使用 ?? 避免 0 被当作 falsy 值）
+            const experienceScore = result.experience_score ?? 50;
+            let experienceColor = 'secondary';
+            let experienceIcon = 'meh';
+            let experienceText = '一般';
+            
+            if (experienceScore >= 90) {
+                experienceColor = 'success';
+                experienceIcon = 'grin-stars';
+                experienceText = '超级开心';
+            } else if (experienceScore >= 70) {
+                experienceColor = 'primary';
+                experienceIcon = 'smile';
+                experienceText = '挺好的';
+            } else if (experienceScore >= 50) {
+                experienceColor = 'info';
+                experienceIcon = 'meh';
+                experienceText = '还行吧';
+            } else if (experienceScore >= 30) {
+                experienceColor = 'warning';
+                experienceIcon = 'frown';
+                experienceText = '有点无聊';
+            } else {
+                experienceColor = 'danger';
+                experienceIcon = 'sad-tear';
+                experienceText = '很不喜欢';
+            }
+            
+            const experienceScoreHtml = `
+                <div class="card border-${experienceColor} mb-2">
+                    <div class="card-header bg-${experienceColor} text-white">
+                        <i class="fas fa-heart"></i> 角色体验评分
+                    </div>
+                    <div class="card-body text-center">
+                        <h2 class="text-${experienceColor} mb-2">
+                            <i class="fas fa-${experienceIcon}"></i> ${experienceScore} <small>/ 100</small>
+                        </h2>
+                        <p class="mb-0"><strong>${experienceText}</strong></p>
+                        <small class="text-muted">孩子视角的整体体验评分</small>
+                    </div>
+                </div>
+            `;
+            
             const finalHtml = `
                 <div class="mt-4">
                     <h6 class="mb-3"><i class="fas fa-star"></i> 📊 详细评分结果</h6>
@@ -867,10 +1036,11 @@
                         </div>
                         <div class="card-body">
                             <small style="white-space: pre-wrap;">${lessonsFormatted}</small>
-                        </div>
+                                </div>
                     </div>
                     
                     ${characterReviewHtml}
+                    ${experienceScoreHtml}
                 </div>
             `;
             
@@ -883,7 +1053,7 @@
         }
 
         // 保存结果到CSV
-        async function saveResultToCSV(child, criteria, conversationLog, scores, reason, lessons, character_review) {
+        async function saveResultToCSV(child, criteria, conversationLog, scores, reason, lessons, character_review, experience_score) {
             try {
                 const response = await fetch('/api/save-result', {
                     method: 'POST',
@@ -898,6 +1068,7 @@
                         reason: reason || '',
                         lessons: lessons || '',
                         character_review: character_review || '',
+                        experience_score: experience_score || 50,
                         timestamp: new Date().toLocaleString('zh-CN', {
                             year: 'numeric',
                             month: '2-digit',
